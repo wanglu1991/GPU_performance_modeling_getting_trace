@@ -383,6 +383,9 @@ void gpgpu_sim_config::reg_options(option_parser_t opp)
    option_parser_register(opp, "-gpgpu_max_cta", OPT_INT32, &gpu_max_cta_opt, 
                "terminates gpu simulation early (0 = no limit)",
                "0");
+   option_parser_register(opp,"-gpgpu_max_kernel",OPT_INT32, &gpu_max_issue_kernel,
+           "terminates gpu simulation early (0 = no limit)",
+           "0");
    option_parser_register(opp, "-gpgpu_runtime_stat", OPT_CSTR, &gpgpu_runtime_stat, 
                   "display runtime statistics such as dram utilization {<freq>:<flag>}",
                   "10000:0");
@@ -565,6 +568,8 @@ gpgpu_sim::gpgpu_sim( const gpgpu_sim_config &config )
     gpu_tot_sim_insn = 0;
     gpu_tot_issued_cta = 0;
     gpu_deadlock = false;
+    gpu_warp_sim_insn=0;
+    gpu_tot_warp_sim_insn=0;
 
 
     m_cluster = new simt_core_cluster*[m_shader_config->n_simt_clusters];
@@ -658,13 +663,21 @@ void gpgpu_sim::reinit_clock_domains(void)
 bool gpgpu_sim::active()
 {
     if (m_config.gpu_max_cycle_opt && (gpu_tot_sim_cycle + gpu_sim_cycle) >= m_config.gpu_max_cycle_opt) 
+    {  assert(0);
        return false;
+    }
     if (m_config.gpu_max_insn_opt && (gpu_tot_sim_insn + gpu_sim_insn) >= m_config.gpu_max_insn_opt) 
-       return false;
+    {   assert(0);
+    	return false;
+
+    }
     if (m_config.gpu_max_cta_opt && (gpu_tot_issued_cta >= m_config.gpu_max_cta_opt) )
+    {	assert(0);
        return false;
+    }
     if (m_config.gpu_deadlock_detect && gpu_deadlock) 
        return false;
+
     for (unsigned i=0;i<m_shader_config->n_simt_clusters;i++) 
        if( m_cluster[i]->get_not_completed()>0 ) 
            return true;;
@@ -683,6 +696,7 @@ void gpgpu_sim::init()
     // run a CUDA grid on the GPU microarchitecture simulator
     gpu_sim_cycle = 0;
     gpu_sim_insn = 0;
+    gpu_warp_sim_insn=0;
     last_gpu_sim_insn = 0;
     m_total_cta_launched=0;
 
@@ -720,6 +734,7 @@ void gpgpu_sim::update_stats() {
     m_memory_stats->memlatstat_lat_pw();
     gpu_tot_sim_cycle += gpu_sim_cycle;
     gpu_tot_sim_insn += gpu_sim_insn;
+    gpu_tot_warp_sim_insn+=gpu_warp_sim_insn;
 }
 
 void gpgpu_sim::print_stats()
@@ -888,12 +903,26 @@ void gpgpu_sim::gpu_print_stat()
 
    printf("gpu_sim_cycle = %lld\n", gpu_sim_cycle);
    printf("gpu_sim_insn = %lld\n", gpu_sim_insn);
+   printf("gpu_warp_sim_insn=%lld\n", gpu_warp_sim_insn);
    printf("gpu_ipc = %12.4f\n", (float)gpu_sim_insn / gpu_sim_cycle);
+   printf("gpu_warp_ipc=%12.4f\n",(float)gpu_warp_sim_insn/gpu_sim_cycle);
    printf("gpu_tot_sim_cycle = %lld\n", gpu_tot_sim_cycle+gpu_sim_cycle);
    printf("gpu_tot_sim_insn = %lld\n", gpu_tot_sim_insn+gpu_sim_insn);
+   printf("gpu_tot_warp_insn=%lld\n",gpu_tot_warp_sim_insn+gpu_warp_sim_insn);
    printf("gpu_tot_ipc = %12.4f\n", (float)(gpu_tot_sim_insn+gpu_sim_insn) / (gpu_tot_sim_cycle+gpu_sim_cycle));
    printf("gpu_tot_issued_cta = %lld\n", gpu_tot_issued_cta);
 
+
+   std::string name="kernel_"+m_executed_kernel_names[0]+".txt";
+   FILE * interval=fopen(name.c_str(),"a");
+           //FILE * interval =fopen("interval_info.txt","a");
+  if (interval!=NULL)
+   {
+
+   fprintf(interval,"%12.4f,%lld\n",(float)gpu_warp_sim_insn/gpu_sim_cycle,gpu_warp_sim_insn);
+
+   }
+   fclose(interval);
 
 
    // performance counter for stalls due to congestion.

@@ -348,8 +348,10 @@ void warp_inst_t::generate_mem_accesses()
 
     if ( space.get_type() == global_space ) {
         ptx_file_line_stats_add_uncoalesced_gmem( pc, m_accessq.size() - starting_queue_size );
+        mem_num=m_accessq.size();
     }
     m_mem_accesses_created=true;
+
 }
 
 void warp_inst_t::memory_coalescing_arch_13( bool is_write, mem_access_type access_type )
@@ -547,7 +549,8 @@ void warp_inst_t::completed( unsigned long long cycle ) const
 {
    unsigned long long latency = cycle - issue_cycle; 
    assert(latency <= cycle); // underflow detection 
-   ptx_file_line_stats_add_latency(pc, latency * active_count());  
+   ptx_file_line_stats_add_latency(pc, latency * active_count());
+
 }
 
 

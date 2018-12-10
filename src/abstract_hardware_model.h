@@ -845,6 +845,10 @@ public:
         cycles = initiation_interval;
         m_cache_hit=false;
         m_empty=false;
+        miss_latency=0;
+        mem_num=0;
+        //minimum_miss_latency=10000;
+       // maximum_miss_latency=0;
     }
     const active_mask_t & get_active_mask() const
     {
@@ -941,6 +945,8 @@ public:
         return m_per_scalar_thread[n].memreqaddr[0];
     }
 
+
+
     bool isatomic() const { return m_isatomic; }
 
     unsigned warp_size() const { return m_config->warp_size; }
@@ -957,10 +963,52 @@ public:
         return cycles > 0;
     }
 
+    void update_latency(unsigned current_latency)
+    {
+    	miss_latency=current_latency;
+    	/*
+    	if (latency < minimum_miss_latency)
+    		minimum_miss_latency=latency;
+    	if(latency > maximum_miss_latency)
+    		maximum_miss_latency=latency;
+        */
+    }
+   unsigned get_latency()
+   {
+	   return miss_latency;
+
+   }
+   void update_creat_cycle(long long cycle)
+   {
+	   miss_creat_cycle=cycle;
+   }
+   unsigned get_creat_time()
+   {
+         return miss_creat_cycle;
+   }
+
+   /* void print_latency() const
+    { if(miss_latency.size()>0&&(mem_num>1))
+      {
+    	FILE* f =fopen("ld_latency.txt","a");
+        if(f!=NULL)
+        {
+        	fprintf(f,"%d,%lld",m_dynamic_warp_id,pc);
+        	for(int i=0;i<miss_latency.size();i++)
+        		fprintf(f,",%d",miss_latency[i]);
+        	fprintf(f,"\n");
+        }
+        fclose(f);
+      }
+    }
+    */
     bool has_dispatch_delay(){
     	return cycles > 0;
     }
-
+    long long get_issue_cycle()
+    {
+    	return issue_cycle;
+    }
     void print( FILE *fout ) const;
     unsigned get_uid() const { return m_uid; }
 
@@ -979,6 +1027,9 @@ protected:
     const core_config *m_config; 
     active_mask_t m_warp_active_mask; // dynamic active mask for timing model (after predication)
     active_mask_t m_warp_issued_mask; // active mask at issue (prior to predication test) -- for instruction counting
+    unsigned miss_latency;
+    unsigned mem_num;
+    unsigned miss_creat_cycle;
 
     struct per_thread_info {
         per_thread_info() {

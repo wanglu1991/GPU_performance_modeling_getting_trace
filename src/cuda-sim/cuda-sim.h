@@ -98,6 +98,10 @@ public:
     }
     //! executes all warps till completion 
     void execute();
+    int get_warp_count()
+    {
+    	return m_warp_count;
+    }
     virtual void warp_exit( unsigned warp_id );
     virtual bool warp_waiting_at_barrier( unsigned warp_id ) const  
     {

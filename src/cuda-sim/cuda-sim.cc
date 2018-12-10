@@ -55,6 +55,7 @@ void ** g_inst_op_classification_stat= NULL;
 int g_ptx_kernel_count = -1; // used for classification stat collection purposes 
 int g_debug_execution = 0;
 int g_debug_thread_uid = 0;
+
 addr_t g_debug_pc = 0xBEEF1518;
 // Output debug information to file options
 
@@ -1734,7 +1735,7 @@ which holds the data for the CUDA kernel to be executed
 void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
 {
      printf("GPGPU-Sim: Performing Functional Simulation, executing kernel %s...\n",kernel.name().c_str());
-
+    int total_warp=0;
      //using a shader core object for book keeping, it is not needed but as most function built for performance simulation need it we use it here
     extern gpgpu_sim *g_the_gpu;
 
@@ -1746,6 +1747,8 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
             g_the_gpu->getShaderCoreConfig()->warp_size
         );
         cta.execute();
+        total_warp+=cta.get_warp_count();
+
     }
     
    //registering this kernel as done      
@@ -1761,7 +1764,12 @@ void gpgpu_cuda_ptx_sim_main_func( kernel_info_t &kernel, bool openCL )
       StatDisp( g_inst_classification_stat[g_ptx_kernel_count]);
       StatDisp ( g_inst_op_classification_stat[g_ptx_kernel_count]);
    }
-
+   FILE * f=fopen("Kernel_warps.txt","a");
+   if(f!=NULL)
+   {
+   fprintf(f,"Total_warps:%d\n",total_warp);
+   }
+   fclose(f);
    //time_t variables used to calculate the total simulation time
    //the start time of simulation is hold by the global variable g_simulation_starttime
    //g_simulation_starttime is initilized by gpgpu_ptx_sim_init_perf() in gpgpusim_entrypoint.cc upon starting gpgpu-sim

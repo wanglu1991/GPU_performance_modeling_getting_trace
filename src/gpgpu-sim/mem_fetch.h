@@ -71,6 +71,15 @@ public:
        }
    }
    void do_atomic();
+   void set_L2_miss_info(bool miss)
+     {
+  	   L2_miss=miss;
+     }
+
+     bool get_L2_miss_info()
+     {
+  	   return L2_miss;
+     }
 
    void print( FILE *fp, bool print_inst = true ) const;
 
@@ -106,6 +115,17 @@ public:
 
    address_type get_pc() const { return m_inst.empty()?-1:m_inst.pc; }
    const warp_inst_t &get_inst() { return m_inst; }
+
+   void update_inst_latency(unsigned latency)
+   {
+	   m_inst.update_latency(latency);
+
+   }
+
+   void update_creat_cycle(long long cycle)
+   {
+	   m_inst.update_creat_cycle(cycle);
+   }
    enum mem_fetch_status get_status() const { return m_status; }
 
    const memory_config *get_mem_config(){return m_mem_config;}
@@ -117,7 +137,7 @@ private:
    unsigned m_sid;
    unsigned m_tpc;
    unsigned m_wid;
-
+   bool L2_miss;
    // where is this request now?
    enum mem_fetch_status m_status;
    unsigned long long m_status_change;

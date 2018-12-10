@@ -333,7 +333,7 @@ void shader_core_ctx::init_warps( unsigned cta_id, unsigned start_thread, unsign
                 }
             }
             m_simt_stack[i]->launch(start_pc,active_threads);
-            m_warp[i].init(start_pc,cta_id,i,active_threads, m_dynamic_warp_id);
+            m_warp[i].init(start_pc,cta_id,i,active_threads, m_dynamic_warp_id,gpu_sim_cycle+gpu_tot_sim_cycle);
             ++m_dynamic_warp_id;
             m_not_completed += n_active;
       }
@@ -595,6 +595,7 @@ void shader_core_ctx::decode()
 
 void shader_core_ctx::fetch()
 {
+
     if( !m_inst_fetch_buffer.m_valid ) {
         // find an active warp with space in instruction buffer that is not already waiting on a cache miss
         // and get next 1-2 instructions from i-cache...
@@ -617,8 +618,11 @@ void shader_core_ctx::fetch()
                     }
                 }
                 if( did_exit ) 
-                    m_warp[warp_id].set_done_exit();
-            }
+                {   m_warp[warp_id].set_done_exit(gpu_sim_cycle+gpu_tot_sim_cycle);
+
+
+
+            }}
 
             // this code fetches instructions from the i-cache or generates memory requests
             if( !m_warp[warp_id].functional_done() && !m_warp[warp_id].imiss_pending() && m_warp[warp_id].ibuffer_empty() ) {
@@ -659,6 +663,24 @@ void shader_core_ctx::fetch()
             }
         }
     }
+  /*
+    if((gpu_sim_cycle+gpu_tot_sim_cycle)%500==0)
+    	 { FILE * number_warp;
+    	                    number_warp=fopen("number_warps","a");
+    	                    if(number_warp!=NULL)
+    	                    { int warps=0;
+    	                    	for(int i=0;i<m_warp.size();i++)
+    	                    	{
+    	                    		if(!m_warp[i].done_exit())
+    	                    			warps++;
+    	                    	}
+    	                    	fprintf(number_warp,"%d,%lld,%d\n",this->m_sid,gpu_sim_cycle+gpu_tot_sim_cycle,warps);
+
+    	                    }
+    	                    fclose(number_warp);
+
+           }
+           */
 
     m_L1I->cycle();
 
@@ -1222,6 +1244,13 @@ void shader_core_ctx::warp_inst_complete(const warp_inst_t &inst)
 
   m_stats->m_num_sim_winsn[m_sid]++;
   m_gpu->gpu_sim_insn += inst.active_count();
+  if(inst.active_count()!=0)
+  m_gpu->gpu_warp_sim_insn+=1;
+  if(inst.active_count()!=0)
+  m_warp[inst.warp_id()].increase_instruction();
+  // print ld_inst maximum latency and minimum latency.
+  //if(inst.is_load())
+  //inst.print_latency();
   inst.completed(gpu_tot_sim_cycle + gpu_sim_cycle);
 }
 
@@ -1661,6 +1690,7 @@ void ldst_unit:: issue( register_set &reg_set )
          unsigned reg_id = inst->out[r];
          if (reg_id > 0) {
             m_pending_writes[warp_id][reg_id] += n_accesses;
+
          }
       }
    }
@@ -1682,10 +1712,31 @@ void ldst_unit::writeback()
             for( unsigned r=0; r < 4; r++ ) {
                 if( m_next_wb.out[r] > 0 ) {
                     if( m_next_wb.space.get_type() != shared_space ) {
+                    	if(m_next_wb.get_latency()>0)
+                    	{miss_latency[m_next_wb.warp_id()][m_next_wb.out[r]].push_back(m_next_wb.get_latency());
+                    	 creat_cycle[m_next_wb.warp_id()][m_next_wb.out[r]].push_back(m_next_wb.get_creat_time());
+                    	}
                         assert( m_pending_writes[m_next_wb.warp_id()][m_next_wb.out[r]] > 0 );
                         unsigned still_pending = --m_pending_writes[m_next_wb.warp_id()][m_next_wb.out[r]];
                         if( !still_pending ) {
                             m_pending_writes[m_next_wb.warp_id()].erase(m_next_wb.out[r]);
+
+                            if((miss_latency[m_next_wb.warp_id()][m_next_wb.out[r]].size()>0)&&(m_next_wb.is_load()))
+                                 {
+                                	FILE* f =fopen("ld_latency_detail_PAE.txt","a");
+                                    if(f!=NULL)
+                                    {   //fprintf(f,"%lld,",m_next_wb.get_issue_cycle());
+                                    	for(int i=0;i<miss_latency[m_next_wb.warp_id()][m_next_wb.out[r]].size();i++)
+                                    		//fprintf(f,"%d,%lld,",miss_latency[m_next_wb.warp_id()][m_next_wb.out[r]][i],creat_cycle[m_next_wb.warp_id()][m_next_wb.out[r]][i]);
+                                    	fprintf(f,"%d,",miss_latency[m_next_wb.warp_id()][m_next_wb.out[r]][i]);
+                                    	fprintf(f,"\n");
+                                    }
+                                    fclose(f);
+
+                                  }
+
+                            miss_latency[m_next_wb.warp_id()][m_next_wb.out[r]].clear();
+                            creat_cycle[m_next_wb.warp_id()][m_next_wb.out[r]].clear();
                             m_scoreboard->releaseRegister( m_next_wb.warp_id(), m_next_wb.out[r] );
                             insn_completed = true; 
                         }
@@ -1697,6 +1748,7 @@ void ldst_unit::writeback()
             }
             if( insn_completed ) {
                 m_core->warp_inst_complete(m_next_wb);
+
             }
             m_next_wb.clear();
             m_last_inst_gpu_sim_cycle = gpu_sim_cycle;
@@ -3315,7 +3367,12 @@ void simt_core_cluster::icnt_cycle()
             // data response
             if( !m_core[cid]->ldst_unit_response_buffer_full() ) {
                 m_response_fifo.pop_front();
+                if(mf->get_L2_miss_info()==true)
                 m_memory_stats->memlatstat_read_done(mf);
+                else
+                m_memory_stats->memlatstat_read_done_L2_miss(mf);
+                if(!mf->is_write())
+                m_memory_stats->record_batch_latency(mf);
                 m_core[cid]->accept_ldst_unit_response(mf);
             }
         }

@@ -336,6 +336,7 @@ private:
     unsigned gpu_max_cycle_opt;
     unsigned gpu_max_insn_opt;
     unsigned gpu_max_cta_opt;
+    unsigned gpu_max_issue_kernel;
     char *gpgpu_runtime_stat;
     bool  gpgpu_flush_l1_cache;
     bool  gpgpu_flush_l2_cache;
@@ -484,7 +485,9 @@ private:
 
 public:
    unsigned long long  gpu_sim_insn;
+   unsigned long long  gpu_warp_sim_insn;
    unsigned long long  gpu_tot_sim_insn;
+   unsigned long long  gpu_tot_warp_sim_insn;
    unsigned long long  gpu_sim_insn_last_update;
    unsigned gpu_sim_insn_last_update_sid;
 

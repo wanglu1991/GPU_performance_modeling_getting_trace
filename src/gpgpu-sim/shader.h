@@ -113,7 +113,7 @@ public:
                unsigned cta_id,
                unsigned wid,
                const std::bitset<MAX_WARP_SIZE> &active,
-               unsigned dynamic_warp_id )
+               unsigned dynamic_warp_id, long long cycle)
     {
         m_cta_id=cta_id;
         m_warp_id=wid;
@@ -124,15 +124,32 @@ public:
         n_completed   -= active.count(); // active threads are not yet completed
         m_active_threads = active;
         m_done_exit=false;
+        init_cycle=cycle;
+        instruction_counts=0;
     }
-
+    void increase_instruction()
+    {
+    	instruction_counts++;
+    }
     bool functional_done() const;
     bool waiting(); // not const due to membar
     bool hardware_done() const;
 
     bool done_exit() const { return m_done_exit; }
-    void set_done_exit() { m_done_exit=true; }
+    void set_done_exit(long long cycle) { m_done_exit=true;
+    finish_cycle=cycle;
+    // print_warp_info();
+    }
+    void print_warp_info()
+    {
+    	FILE * f =fopen("warp_info.txt","a");
+    	if(f!=NULL)
+    	{
+    		fprintf(f,"%d,%lld,%f\n",instruction_counts,(finish_cycle-init_cycle),float(instruction_counts)/float(finish_cycle-init_cycle));
+    	}
+        fclose(f);
 
+    }
     void print( FILE *fout ) const;
     void print_ibuffer( FILE *fout ) const;
 
@@ -260,6 +277,9 @@ private:
 
     unsigned m_stores_outstanding; // number of store requests sent but not yet acknowledged
     unsigned m_inst_in_pipeline;
+    long long init_cycle;
+    long long finish_cycle;
+    unsigned instruction_counts;
 };
 
 
@@ -267,7 +287,7 @@ private:
 inline unsigned hw_tid_from_wid(unsigned wid, unsigned warp_size, unsigned i){return wid * warp_size + i;};
 inline unsigned wid_from_hw_tid(unsigned tid, unsigned warp_size){return tid/warp_size;};
 
-const unsigned WARP_PER_CTA_MAX = 48;
+const unsigned WARP_PER_CTA_MAX = 64;
 typedef std::bitset<WARP_PER_CTA_MAX> warp_set_t;
 
 int register_bank(int regnum, int wid, unsigned num_banks, unsigned bank_warp_shift);
@@ -1167,6 +1187,8 @@ protected:
    read_only_cache *m_L1C; // constant cache
    l1_cache *m_L1D; // data cache
    std::map<unsigned/*warp_id*/, std::map<unsigned/*regnum*/,unsigned/*count*/> > m_pending_writes;
+   std::map<unsigned/*warp_id*/, std::map<unsigned/*regnum*/,std::vector<unsigned >> > miss_latency;
+   std::map<unsigned/*warp_id*/, std::map<unsigned/*regnum*/,std::vector<long long >> > creat_cycle;
    std::list<mem_fetch*> m_response_fifo;
    opndcoll_rfu_t *m_operand_collector;
    Scoreboard *m_scoreboard;

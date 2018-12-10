@@ -78,7 +78,40 @@ new_addr_type linear_to_raw_address_translation::partition_address( new_addr_typ
       return partition_addr; 
    }
 }
+//baseline
 
+void linear_to_raw_address_translation::addrdec_tlx(new_addr_type addr, addrdec_t *tlx) const
+{
+   unsigned long long int addr_for_chip,rest_of_addr;
+   if (!gap) {
+      tlx->chip = addrdec_packbits(addrdec_mask[CHIP], addr, addrdec_mkhigh[CHIP], addrdec_mklow[CHIP]);
+      tlx->bk   = addrdec_packbits(addrdec_mask[BK], addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
+      tlx->row  = addrdec_packbits(addrdec_mask[ROW], addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
+      tlx->col  = addrdec_packbits(addrdec_mask[COL], addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
+      tlx->burst= addrdec_packbits(addrdec_mask[BURST], addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
+   } else {
+      // Split the given address at ADDR_CHIP_S into (MSBs,LSBs)
+      // - extract chip address using modulus of MSBs
+      // - recreate the rest of the address by stitching the quotient of MSBs and the LSBs
+      addr_for_chip = (addr>>ADDR_CHIP_S) % m_n_channel;
+      rest_of_addr = ( (addr>>ADDR_CHIP_S) / m_n_channel) << ADDR_CHIP_S;
+      rest_of_addr |= addr & ((1 << ADDR_CHIP_S) - 1);
+
+      tlx->chip = addr_for_chip;
+      tlx->bk   = addrdec_packbits(addrdec_mask[BK], rest_of_addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
+      tlx->row  = addrdec_packbits(addrdec_mask[ROW], rest_of_addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
+      tlx->col  = addrdec_packbits(addrdec_mask[COL], rest_of_addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
+      tlx->burst= addrdec_packbits(addrdec_mask[BURST], rest_of_addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
+   }
+
+   // combine the chip address and the lower bits of DRAM bank address to form the subpartition ID
+   unsigned sub_partition_addr_mask = m_n_sub_partition_in_channel - 1;
+   tlx->sub_partition = tlx->chip * m_n_sub_partition_in_channel
+                        + (tlx->bk & sub_partition_addr_mask);
+}
+
+//PM remapping strategy
+/*
 void linear_to_raw_address_translation::addrdec_tlx(new_addr_type addr, addrdec_t *tlx) const
 {  
    unsigned long long int addr_for_chip,rest_of_addr;
@@ -102,12 +135,129 @@ void linear_to_raw_address_translation::addrdec_tlx(new_addr_type addr, addrdec_
       tlx->col  = addrdec_packbits(addrdec_mask[COL], rest_of_addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
       tlx->burst= addrdec_packbits(addrdec_mask[BURST], rest_of_addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
    }
+   unsigned addr_bank=4;
+   //unsigned addr_channel=4;
+   tlx->bk ^=tlx->row & ((1<<addr_bank)-1);
 
    // combine the chip address and the lower bits of DRAM bank address to form the subpartition ID
    unsigned sub_partition_addr_mask = m_n_sub_partition_in_channel - 1; 
    tlx->sub_partition = tlx->chip * m_n_sub_partition_in_channel
                         + (tlx->bk & sub_partition_addr_mask); 
 }
+*/
+//PAE remapping strategy
+/*
+void linear_to_raw_address_translation::addrdec_tlx(new_addr_type addr, addrdec_t *tlx) const
+{
+	new_addr_type rdm_addr=addrdec_bim_tlx(addr);
+
+   unsigned long long int addr_for_chip,rest_of_addr;
+   if (!gap) {
+      tlx->chip = addrdec_packbits(addrdec_mask[CHIP], rdm_addr, addrdec_mkhigh[CHIP], addrdec_mklow[CHIP]);
+      tlx->bk   = addrdec_packbits(addrdec_mask[BK], rdm_addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
+      tlx->row  = addrdec_packbits(addrdec_mask[ROW], rdm_addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
+      tlx->col  = addrdec_packbits(addrdec_mask[COL], rdm_addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
+      tlx->burst= addrdec_packbits(addrdec_mask[BURST], rdm_addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
+   } else {
+      // Split the given address at ADDR_CHIP_S into (MSBs,LSBs)
+      // - extract chip address using modulus of MSBs
+      // - recreate the rest of the address by stitching the quotient of MSBs and the LSBs
+      addr_for_chip = (rdm_addr>>ADDR_CHIP_S) % m_n_channel;
+      rest_of_addr = ( (rdm_addr>>ADDR_CHIP_S) / m_n_channel) << ADDR_CHIP_S;
+      rest_of_addr |= rdm_addr & ((1 << ADDR_CHIP_S) - 1);
+
+      tlx->chip = addr_for_chip;
+      tlx->bk   = addrdec_packbits(addrdec_mask[BK], rest_of_addr, addrdec_mkhigh[BK], addrdec_mklow[BK]);
+      tlx->row  = addrdec_packbits(addrdec_mask[ROW], rest_of_addr, addrdec_mkhigh[ROW], addrdec_mklow[ROW]);
+      tlx->col  = addrdec_packbits(addrdec_mask[COL], rest_of_addr, addrdec_mkhigh[COL], addrdec_mklow[COL]);
+      tlx->burst= addrdec_packbits(addrdec_mask[BURST], rest_of_addr, addrdec_mkhigh[BURST], addrdec_mklow[BURST]);
+   }
+  // unsigned addr_bank=4;
+   //unsigned addr_channel=m_n_channel;
+
+   //unsigned addr_channel=4;
+
+  // tlx->bk ^=tlx->row & ((1<<addr_bank)-1);
+  // tlx->chip ^=tlx->row & ((1<<addr_channel)-1);
+   // combine the chip address and the lower bits of DRAM bank address to form the subpartition ID
+   unsigned sub_partition_addr_mask = m_n_sub_partition_in_channel - 1;
+   tlx->sub_partition = tlx->chip * m_n_sub_partition_in_channel
+                        + (tlx->bk & sub_partition_addr_mask);
+}
+
+unsigned pae_rdm_mtx_27[][27] = {
+// C: column
+// H: channel
+// B: bank
+// R: row
+// C   C   B   H   H   H   H   H   C   C   C   C   B   B   B   R   R   R   R   R   R   R   R   R   R   R   R
+ { 1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  1,  0,  1,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  1,  1,  0,  1,  1,  0,  1,  0,  1,  0,  1,  0 },
+ { 0,  0,  0,  1,  0,  1,  0,  1,  0,  0,  0,  0,  1,  0,  1,  0,  1,  1,  0,  1,  1,  0,  1,  0,  0,  0,  1 },
+ { 0,  0,  1,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  1,  0,  1,  0,  1,  0,  0,  1,  1,  0,  1 },
+ { 0,  0,  0,  0,  0,  1,  0,  1,  0,  0,  0,  0,  0,  1,  1,  0,  0,  1,  1,  1,  0,  1,  0,  1,  0,  0,  1 },
+ { 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  1,  1,  0,  1,  1,  0,  1,  0,  1,  0,  0,  1,  0,  1,  0 },
+ { 0,  0,  0,  1,  0,  1,  0,  1,  0,  0,  0,  0,  1,  0,  0,  0,  1,  1,  0,  1,  0,  1,  0,  1,  1,  0,  1 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  1,  1,  0,  1,  0,  0,  0,  0,  1,  0,  1,  1,  0,  1,  1,  0,  1,  0,  1,  1,  0,  1,  1 },
+ { 0,  0,  1,  0,  0,  1,  1,  0,  0,  0,  0,  0,  0,  1,  0,  1,  1,  0,  0,  1,  0,  0,  0,  1,  1,  0,  0 },
+ { 0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0,  1,  0,  1,  0,  1,  1,  0,  0,  1,  0,  0,  1,  0,  1,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0 },
+ { 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1 },
+};
+
+
+new_addr_type linear_to_raw_address_translation::addrdec_bim_tlx(new_addr_type raw_addr) const
+{
+   new_addr_type rdm_addr = 0;
+   int num_cache_line_bits=5;
+   int num_page_addr_bits=27;
+   // cache line bits
+   for( unsigned i=0; i<num_cache_line_bits; i++) {
+       new_addr_type pos = (1ULL) << i;
+       rdm_addr |= ( raw_addr & pos );
+   }
+
+   //new_addr_type mask = parallel_mask | local_mask;
+
+
+
+
+
+   for( unsigned i=0; i<num_page_addr_bits; i++) { // in my case page_addr_bits is 23
+      new_addr_type cur = 0;
+      for( unsigned j=0; j<num_page_addr_bits; j++) {
+         //unsigned k = get_rightmost_bit( j, mask );
+         unsigned k=num_cache_line_bits+j;
+         new_addr_type pos = (1ULL) << k;
+         new_addr_type left  = ( (raw_addr & pos) >> k );
+         //new_addr_type right = ( (bim_mtx_opr[i] & pos) >> k ); // bim_mtx_opr is the 30-bit matrix holder initialized by pae_rdm_mtx_23
+         new_addr_type right = pae_rdm_mtx_27[i][j];
+         cur ^= ( left & right );
+      }
+
+      rdm_addr |= ( cur << (i+num_cache_line_bits));
+   }
+
+   return rdm_addr;
+
+}
+
+*/
 
 void linear_to_raw_address_translation::addrdec_parseoption(const char *option)
 {

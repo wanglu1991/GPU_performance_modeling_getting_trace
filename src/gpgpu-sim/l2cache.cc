@@ -393,6 +393,7 @@ void memory_sub_partition::cache_cycle( unsigned cycle )
                             delete mf;
                         } else {
                             mf->set_reply();
+                            mf->set_L2_miss_info(true);
                             mf->set_status(IN_PARTITION_L2_TO_ICNT_QUEUE,gpu_sim_cycle+gpu_tot_sim_cycle);
                             m_L2_icnt_queue->push(mf);
                         }

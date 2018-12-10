@@ -86,6 +86,11 @@ memory_stats_t::memory_stats_t( unsigned n_shader, const struct shader_core_conf
    mf_tot_lat_pw = 0; //total latency summed up per window. divide by mf_num_lat_pw to obtain average latency Per Window
    mf_total_lat = 0;
    num_mfs = 0;
+   batch_latency_sum=0;
+   number_batch=0;
+   number_L1_miss=0;
+   L1_miss_latency_sum=0;
+
    printf("*** Initializing Memory Statistics ***\n");
    totalbankreads = (unsigned int**) calloc(mem_config->m_n_mem, sizeof(unsigned int*));
    totalbankwrites = (unsigned int**) calloc(mem_config->m_n_mem, sizeof(unsigned int*));
@@ -154,6 +159,9 @@ void memory_stats_t::memlatstat_read_done(mem_fetch *mf)
 {
    if (m_memory_config->gpgpu_memlatency_stat) {
       unsigned mf_latency = memlatstat_done(mf);
+      //update mf->inst maximum latency and minimum latency
+      mf->update_inst_latency(mf_latency);
+      mf->update_creat_cycle(mf->get_timestamp());
       if (mf_latency > mf_max_lat_table[mf->get_tlx_addr().chip][mf->get_tlx_addr().bk]) 
          mf_max_lat_table[mf->get_tlx_addr().chip][mf->get_tlx_addr().bk] = mf_latency;
       unsigned icnt2sh_latency;
@@ -162,8 +170,38 @@ void memory_stats_t::memlatstat_read_done(mem_fetch *mf)
       if (icnt2sh_latency > max_icnt2sh_latency)
          max_icnt2sh_latency = icnt2sh_latency;
    }
+
+}
+void memory_stats_t::memlatstat_read_done_L2_miss(mem_fetch *mf)
+ {    unsigned mf_latency=(gpu_sim_cycle+gpu_tot_sim_cycle) - mf->get_timestamp();
+      L1_miss_latency_sum+=mf_latency;
+      number_L1_miss+=1;
+
+
 }
 
+void memory_stats_t::record_batch_latency(mem_fetch *mf)
+ {    unsigned mf_latency=(gpu_sim_cycle+gpu_tot_sim_cycle) - mf->get_timestamp();
+      if(batch_latency.size()<128)
+      {
+    	  batch_latency.push_back(mf_latency);
+
+      }
+      else
+      {  unsigned max_batch_latency=0;
+         for (int i=0;i<batch_latency.size();i++)
+         {if(batch_latency[i]>max_batch_latency)
+        	 max_batch_latency=batch_latency[i];
+
+         }
+         batch_latency_sum+=max_batch_latency;
+         number_batch+=1;
+         batch_latency.clear();
+      }
+
+
+
+}
 void memory_stats_t::memlatstat_dram_access(mem_fetch *mf)
 {
    unsigned dram_id = mf->get_tlx_addr().chip;
@@ -220,8 +258,17 @@ void memory_stats_t::memlatstat_print( unsigned n_mem, unsigned gpu_mem_n_bk )
       printf("maxdqlatency = %d \n", max_dq_latency);
       printf("maxmflatency = %d \n", max_mf_latency);
       if (num_mfs) {
-         printf("averagemflatency = %lld \n", mf_total_lat/num_mfs);
+         printf("averagemflatency_L1_hit = %lld \n", mf_total_lat/num_mfs);
       }
+      if(number_batch)
+      {
+    	  printf("average_max_batch_latency=%lld\n",batch_latency_sum/number_batch);
+      }
+      if(number_L1_miss)
+            {
+          	  printf("average_L1_miss_latency=%lld\n",L1_miss_latency_sum/number_L1_miss);
+            }
+
       printf("max_icnt2mem_latency = %d \n", max_icnt2mem_latency);
       printf("max_icnt2sh_latency = %d \n", max_icnt2sh_latency);
       printf("mrq_lat_table:");
